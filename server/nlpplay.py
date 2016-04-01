@@ -50,6 +50,28 @@ def extract_features_model_one(doc):
 
 
 
+def classify_test1():
+	#use features - says unigram or top 20 words using a freq summary or use sentiwordnet
+	#to find the top words based on the sentiwordnet score. Select those words as features
+
+	#for a given test instance
+	"""
+	test_message_features = extract_features(testmessage)
+	for (messageId, messageFeature, label) messageFeatureSummaries:
+		similarity[messageId] = len(set(messageFeature).intersection(set(test_message_features)))
+
+	labels = defaultdict(int)
+	knn = nlargest(5, similarity, key=similarity.get)
+
+	for oneNeighbor in knn:
+		labels[messageFeatureSummaries[oneNeighbor]['label']] += 1
+
+	nlargest(1, labels, key = labels.get)
+
+	"""
+
+
+
 def main():
 
 	all_words = vocab_builder(training_data)
@@ -61,6 +83,14 @@ def main():
 
 	result_label = classifier.classify(extract_features_model_one(test1))
 	print "result_label: {}".format(result_label)
+
+	# we could also do top 25 words in each doc/email/message using a frequency summarizer
+	"""
+	basically 
+	positivity = P(message is positive|features in the message) = 
+		P(positive) * P(feature1 is positive) * P(feature2 is positive)... / P(features in the message)
+
+	"""
 
 
 
