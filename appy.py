@@ -9,6 +9,7 @@ from flask.ext.restful import Api, Resource
 from flask.ext.restful import reqparse
 from server import docManager
 import copy
+from server import nlp
 
 
 import traceback
@@ -58,6 +59,14 @@ class Hello(object):
 
 hello = Hello()
 hello.init()
+
+"""
+Now load the processing engines
+
+"""
+ep = nlp.EnginePool()
+ep.start_engines()
+
 
 #########################################################################################
 """
@@ -159,6 +168,11 @@ class HelloEmailMessageAPI(Resource):
 			toParams   = EmailProcessingUtil.process_To_parameters(toItem)
 			messageSubject = message['Subject']
 			messageBody = message['Body']['Content']
+
+			# post a message to the NLP processing engine
+			ep.post_message_email({'From' : fromItem, 'To' : toItem, 'Subject' : messageSubject,
+				'Body' : messageBody})
+
 					
 			return jsonify( { 'status': "ok", 'From' : fromParams,
 			'To' : toParams, 'Subject' : messageSubject, 'Body' : messageBody} )

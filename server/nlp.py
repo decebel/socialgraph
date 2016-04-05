@@ -8,6 +8,10 @@ from nltk.stem.porter import PorterStemmer
 from collections import deque, defaultdict
 from Queue import Queue, Full, Empty # thread-safe queue
 import threading
+import time
+
+import logging
+log = logging.getLogger('nlp')
 
 
 class CommandInfo(object):
@@ -29,7 +33,8 @@ class CommandInfo(object):
 		if arg in self.args:
 			return self.args[arg]
 
-		return None		
+	def get_payload(self):
+		return self.args
 
 
 ###TODO. to be implemented by Hello
@@ -38,11 +43,27 @@ class Listener(object):
 		pass
 
 
-class NLPEngine(threading.Thread):
+class DegreesManager(threading.Thread):
 
-	def __init__(self, helloWorldGraph, command_queue):
+	def __init__(self, engine_name, hello_world_graph, command_queue = None):
+		threading.Thread.__init__(self, name = engine_name)
+
 		self.isRunning = False
-		self.command_queue = command_queue
+
+		if not command_queue:
+			self.command_queue = Queue()
+		else:
+			self.command_queue = command_queue
+
+
+		self.engine_name = engine_name
+		self.graph = hello_world_graph
+
+	def get_path(fromId, toId, length, weight='weight'):
+		pass
+
+	
+
 
 
 	def onEmailMessage(self, message):
@@ -56,19 +77,19 @@ class NLPEngine(threading.Thread):
 		print "posting to queue.."
 
 	def shutdown(self):
-		self.running = False
+		self.isRunning = False
 
 	def run(self):
 		
-		if not self.running:
-			self.running = True
+		if not self.isRunning:
+			self.isRunning = True
 			self._process_queued_messages()
 
 		print "\nrun method completed"
 
 	def _process_queued_messages(self):
 
-		while self.running:
+		while self.isRunning:
 			print "inside command processor. waiting for commands"			
 			workFound = False
 
@@ -90,7 +111,7 @@ class NLPEngine(threading.Thread):
 
 			except Exception as e:
 				import traceback, os.path
- 				top = traceback.extract_stack()[-1]
+				top = traceback.extract_stack()[-1]
 				logging.error(', '.join([type(e).__name__, os.path.basename(top[0]), str(top[1])]))					
 				logging.error("error processing command %s", str(e))
 
@@ -99,14 +120,174 @@ class NLPEngine(threading.Thread):
 					self.command_queue.task_done()
 
 	def _process_em(self, commandInfo):
+		log.info("processing EM command. message: {}".format(commandInfo.get_payload()))
+		
+
+		
+	def _process_im(self, commandInfo):
 		pass
 
+
+class NLPEngine(threading.Thread):
+
+	def __init__(self, engine_name, hello_world_graph, command_queue = None):
+		threading.Thread.__init__(self, name = engine_name)
+
+		self.isRunning = False
+
+		if not command_queue:
+			self.command_queue = Queue()
+		else:
+			self.command_queue = command_queue
+
+
+		self.engine_name = engine_name
+		self.graph = hello_world_graph
+
+
+	def onEmailMessage(self, message):
+		self.command_queue.put(CommandInfo("EM", message ))		
+
+	def onIMMessage(self, message):
+		self.command_queue.put(CommandInfo("IM", message ))		
+		
+
+	def post_message(self, tableId, schema):
+		print "posting to queue.."
+
+	def shutdown(self):
+		self.isRunning = False
+
+	def run(self):
+		
+		if not self.isRunning:
+			self.isRunning = True
+			self._process_queued_messages()
+
+		print "\nrun method completed"
+
+	def _process_queued_messages(self):
+
+		while self.isRunning:
+			print "inside command processor. waiting for commands"			
+			workFound = False
+
+			try:				
+
+				commandInfo = self.command_queue.get(True, 5) #should block until someone has posted some command on the queue
+				workFound = True #hack to avoid exception within finally block
+
+				#todo: should we do a dispatch table. they seem to be static methods ?
+				if commandInfo.get_command() == "EM":
+					self._process_em(commandInfo)
+
+				elif commandInfo.get_command() == "IM":
+					self._process_im(commandInfo)
+
+
+			except Empty as timeout:
+				logging.debug("Timeout..no input commands")
+
+			except Exception as e:
+				import traceback, os.path
+				top = traceback.extract_stack()[-1]
+				logging.error(', '.join([type(e).__name__, os.path.basename(top[0]), str(top[1])]))					
+				logging.error("error processing command %s", str(e))
+
+			finally:
+				if workFound:
+					self.command_queue.task_done()
+
+	def _process_em(self, commandInfo):
+		log.info("processing EM command. message: {}".format(commandInfo.get_payload()))
+
+
+		
 	def _process_im(self, commandInfo):
 		pass
 
 
 
+def default_nlp_engine():
+	return NLPEngine('default', None, None)		
 
+MODELS = {
+	'default' : default_nlp_engine(),
+} 
+
+SERVERS = {
+	
+}
+
+
+
+
+class EnginePool(threading.Thread):
+
+	def __init__(self, models = ['default']):
+		threading.Thread.__init__(self)
+		self.models = models
+		self.isRunning = False
+
+	def start_engines(self):			
+		for model in self.models:
+			if model not in SERVERS:
+				SERVERS[model] = nlp_service = MODELS.get(model)				
+			if not nlp_service.isRunning:
+				nlp_service.setDaemon(True)
+				nlp_service.start()
+
+
+	def stop_engines(self):		
+		"""Not a forceful shutdown. """
+		for model in self.models:
+			m = SERVERS[model]
+			m.shutdown()
+
+	def stop_driver(self):
+		self.isRunning = False
+
+	def run(self):
+		self.isRunning = True
+
+		while self.isRunning:
+			time.sleep(2)
+			self.post_message_email('test message')
+			# for model in self.models:
+			# 	log.info("posting message to the nlp engine: {}".format(model))
+			# SERVERS[model].onEmailMessage('test message')
+			logging.debug('running')
+
+
+
+	def post_message_email(self, message, dest_models = None):
+		if dest_models is None:
+			dest_models_to_post = self.models
+		else:
+			dest_models_to_post = dest_models
+
+		for model in dest_models_to_post:
+			if model in SERVERS:
+				SERVERS[model].onEmailMessage(message)
+			else:
+				log.error("model name is not valid: {}".format(model))
+
+
+
+def engine_pool_tester():
+	ep = EnginePool()
+	ep.start_engines()
+
+	try:
+		ep.start()
+		log.info("started pool..")
+
+	except Exception as ex:		
+		log.warn("received exception: {}".format(ex.message))
+		ep._Thread__stop() #not sure
+		ep.stop_engines()
+
+		sys.exit(1)
 
 
 
@@ -189,35 +370,6 @@ class FrequencySummarizr(object):
 
 
 
-class NLPModel(object):
-	
-	def __init__(self, handler, name, threadCount):
-		self.name = name
-		self.handler = handler
-		self.threadCount = threadCount
-		self.q = Queue()
-		self.SERVERS = {}
-
-	def start(self):
-		for i in range(self.threadCount):
-			self.SERVERS[i] = NLPEngine(self.handler, self.q)
-			self.SERVERS[i].start()
-
-		
-
-SERVERS = {'default' : NLPEngine()} # default
-
-def start_server_if_not_started(nlp_model = 'default'):
-			
-	if nlp_model not in SERVERS:
-		SERVERS[nlp_model] = NLPEngine() # 
-
-	server = SERVERS[nlp_model]
-	if not server.isRunning():
-		server.start()
-		#TODO: verify the server is started
-
-	return server
 
 """
 
@@ -258,7 +410,13 @@ lunch[0].obj_score()
 """
 
 def  main():
-	pass
+	engine_pool_tester()
+
+
+
 if __name__ == '__main__':
+	logging.basicConfig(level=logging.DEBUG,
+                    format='%(asctime)s (%(threadName)-2s) %(message)s',
+                    )	
 	main()
 
